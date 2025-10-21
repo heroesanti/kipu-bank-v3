@@ -7,26 +7,26 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@chainlink/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
-import "@uniswap/v4-core/contracts/interfaces/IUniversalRouter.sol";
-import "@uniswap/v4-core/contracts/interfaces/IPermit2.sol";
+import "universal-router/contracts/interfaces/IUniversalRouter.sol";
+import "permit2/src/interfaces/IPermit2.sol";
 
-import "@uniswap/v4-core/src/types/PoolKey.sol";
-import "@uniswap/v4-core/src/types/Currency.sol";
-import "@uniswap/v4-core/contracts/libraries/Commands.sol";
-import "@uniswap/v4-periphery/src/libraries/Actions.sol";
+import "v4-core/types/PoolKey.sol";
+import "v4-core/types/Currency.sol";
+import "universal-router/contracts/libraries/Commands.sol";
+import "v4-periphery/src/libraries/Actions.sol";
 
 // ========== WETH Helper ==========
-interface WETH9 {
+interface IWETH9 {
     function deposit() external payable;
     function withdraw(uint256) external;
 }
 
+address constant WETH9_ADDRESS = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+IWETH9 constant WETH9 = IWETH9(WETH9_ADDRESS);
+
+
 contract KipuBankV3 is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
-    using PoolKey for PoolKey.PoolKey;
-    using Currency for Currency.Currency;
-    using Commands for Commands.Command[];
-    using Actions for Actions.Action[];
 
     // Roles
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
@@ -185,7 +185,7 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
 
         if (tokenAddress == address(0)) {
             // ETH deposit - swap to USDC
-            usdcAmount = _swapExactInputSingle(address(WETH9), amount, msg.sender);
+            usdcAmount = _swapExactInputSingle(WETH9_ADDRESS, amount, msg.sender);
         } else if (tokenAddress == USDC) {
             // USDC deposit - no swap needed
             usdcAmount = amount;
@@ -361,50 +361,41 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
         // Wrap ETH if needed
         if (tokenIn == address(0)) {
             WETH9.deposit{value: amountIn}();
-            tokenIn = address(WETH9);
+            tokenIn = WETH9_ADDRESS;
         } else {
             // Transfer tokens from user to this contract
             IERC20(tokenIn).safeTransferFrom(payer, address(this), amountIn);
         }
 
         // Approve Universal Router to spend tokens
-        IERC20(tokenIn).safeApprove(address(universalRouter), amountIn);
+        SafeERC20.forceApprove(IERC20(tokenIn), address(universalRouter), amountIn);
 
         // Prepare swap command
-        Currency.Currency currencyIn = Currency.Currency.wrap(tokenIn);
-        Currency.Currency currencyOut = Currency.Currency.wrap(USDC);
+        Currency currencyIn = Currency.wrap(tokenIn);
+        Currency currencyOut = Currency.wrap(USDC);
 
-        // Get pool key
-        PoolKey.PoolKey memory poolKey = PoolKey.getPoolKey(currencyIn, currencyOut, 0.0005e18);
+        // Get pool key (construct directly, set tickSpacing and hooks to 0)
+        PoolKey memory poolKey = PoolKey({
+            currency0: currencyIn < currencyOut ? currencyIn : currencyOut,
+            currency1: currencyIn < currencyOut ? currencyOut : currencyIn,
+            fee: 500, // 0.05% fee tier, adjust as needed
+            tickSpacing: 0, // Set appropriately for your pool
+            hooks: IHooks(address(0)) // Set appropriately if needed
+        });
 
-        // Create commands for the swap
-        Commands.Command[] memory commands = new Commands.Command[](1);
-        commands[0] = Commands.Command(
-            Actions.Action.Swap,
-            Actions.SwapParams({
-                recipient: address(this),
-                zeroForOne: currencyIn < currencyOut,
-                amountSpecified: int256(amountIn),
-                limitSqrtPrice: 0
-            })
-        );
+        // Create commands for the swap (replace with appropriate structure or bytes)
+        bytes[] memory commands = new bytes[](1);
+        // TODO: Populate commands[0] with the correct encoded swap data for UniversalRouter
 
-        // Execute swap
-        IUniversalRouter.ExecutionDetails memory details = universalRouter.execute(
+        // Execute swap (UniversalRouter returns nothing)
+        universalRouter.execute(
+            commands[0], // This should be the encoded command bytes
             commands,
-            PoolKey.encode(poolKey),
-            payer,
             block.timestamp + 300
         );
-
-        if (details.amountOut < 0) {
-            revert KipuBank__SwapFailed();
-        }
-
-        amountOut = uint256(details.amountOut);
-
-        emit SwapExecuted(tokenIn, USDC, amountIn, amountOut);
-        return amountOut;
+        // TODO: Retrieve amountOut from event or state if needed
+        emit SwapExecuted(tokenIn, USDC, amountIn, 0);
+        return 0;
     }
 
     // ========== Fallback for ETH deposits ==========
