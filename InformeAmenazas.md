@@ -116,5 +116,3 @@ El estado actual del protocolo presenta un **Riesgo Alto** y una **Madurez Baja*
 **No desplegar en mainnet** hasta completar las pruebas rigurosas, implementar el **Multisig/DAO** para gobernanza y recibir una auditoría externa positiva. La **prioridad es la seguridad** sobre la velocidad.
 
 ---
-
-¿Te gustaría que profundice en la implementación de alguna de estas **mitigaciones** específicas, como el uso de un Multisig para el `ADMIN_ROLE`?
